@@ -475,8 +475,8 @@ class Kraken():
             
             if self.buying_power > self.minimum_fund:
     
-                response = k.query_private('AddOrder',
-                                                {'pair': self.tickers[self.pair],
+                response = self.k.query_private('AddOrder',
+                                                {'pair': self.pair,
                                                  'type': 'buy',
                                                  'ordertype': 'market',
                                                  'volume': self.fund})
@@ -496,8 +496,8 @@ class Kraken():
 
                 if self.crypto_value * df_ema.close[-1] > self.minimum_fund:
 
-                    response = k.query_private('AddOrder',
-                                                    {'pair': self.tickers[self.pair],
+                    response = self.k.query_private('AddOrder',
+                                                    {'pair': self.pair,
                                                      'type': 'sell',
                                                      'ordertype': 'market',
                                                      'volume': self.crypto_value})
