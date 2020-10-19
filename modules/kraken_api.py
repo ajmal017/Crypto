@@ -18,7 +18,7 @@ warnings.filterwarnings("ignore")
 
 class Kraken():
     
-    def __init__(self, pair, api_key_file, minimum_fund):
+    def __init__(self, pair, api_key_file, minimum_fund, percent_alloc):
         
         self.pair = pair
         self.api_key_file = api_key_file
@@ -31,8 +31,13 @@ class Kraken():
         self.assets = list(self.balance.keys())
         self.tickers = {'BTC/EUR':'XXBT','ETH/EUR':'XETH','DASH/EUR':'XDASH',
                         'XRP/EUR':'XXRP','DOT/EUR':'XDOT'}
-        
+        self.percent_alloc = percent_alloc
         self.fund = float(self.balance['ZEUR'])
+        self.buying_power = self.fund * self.percent_alloc
+        try:
+            self.crypto_value = float(self.balance[self.tickers[self.pair]])
+        except:
+            pass
         self.candle_rankings = {
                                 "CDL3LINESTRIKE_Bull": 1,
                                 "CDL3LINESTRIKE_Bear": 2,
@@ -150,7 +155,7 @@ class Kraken():
         
     
     def live_pattern(self, interval_5min, bars_5min, period_ema_5min, 
-                           interval_hourly, bars_hourly, period_ssl):
+                           interval_hourly, bars_hourly, period_ssl,quantiles):
         
         while True:
             
@@ -159,8 +164,8 @@ class Kraken():
             df_5min = self.ohlcv(interval_5min, bars_5min)
             df_hourly = self.ohlcv(interval_hourly, bars_hourly)
             
-            df_ema = self.ema(period_ema_5min, df_5min)
-            df_ssl = self.ssl(period_ssl, df_hourly)
+            df_ema = self.ema(df_5min, period_ema_5min)
+            df_ssl = self.ssl(df_hourly, period_ssl)
             
             #df_ema = self.average_bar(30, df_ema)
             
@@ -168,7 +173,7 @@ class Kraken():
             print ('starting',df_ema.index[-1],'5min candle')
 
             #################################################################################
-            self.research_pattern(df_ema, df_ssl)
+            self.research_pattern_ssl(df_ema, df_ssl,quantiles)
             #################################################################################
 
             last = datetime.datetime.strptime(df_ema.index[-1], '%Y-%m-%d %H:%M:%S').timestamp()
@@ -183,8 +188,8 @@ class Kraken():
                              rolling_reg_period, zone_quantile):
         
         df_daily = self.ohlcv(interval_daily, bars_daily)
-        df_daily = self.ema(period_ema_daily, df_daily)
-        df_daily = self.ssl(period_ssl_daily, df_daily)
+        df_daily = self.ema(df_daily, period_ema_daily)
+        df_daily = self.ssl(df_daily, period_ssl_daily)
         
         multi_reg = self.rolling_regression(df_daily, rolling_reg_period)
         ema_to_close = df_daily['ema_to_close'].iloc[-1]
@@ -334,7 +339,7 @@ class Kraken():
         
         return bull, bear
         
-    def ssl(self,period_ssl, df_ssl):
+    def ssl(self, df_ssl, period_ssl):
 
         #function ssl
         low = df_ssl.low.values
@@ -363,18 +368,37 @@ class Kraken():
 
         return df_ssl
     
-    def ema(self, period_ema, df_ema):
+    def ema(self, df, period):
 
-        raw = df_ema.close.values
-        ema = talib.EMA(raw, timeperiod=period_ema)
+        ema = talib.EMA(df.close, timeperiod=period)
 
-        df_ema['ema'] = ema
-        df_ema['ema_to_close']  = (ema - raw)/raw 
+        df['ema'] = ema
+        df['ema_to_close']  = (ema - df.close.values)/df.close.values 
         
-        return df_ema
+        return df
+      
+    def sma(self, df, period):
+
+        sma = talib.SMA(df.close, timeperiod=period)
+
+        df['sma'] = sma
+        df['sma_to_close']  = (sma - df.close.values)/df.close.values 
         
+        return df    
         
-    def average_bar(self, period, df):
+    def stochastic(self, df, fastk_period, slowk_period, slowd_period):
+        
+        df['slowk'],df['slowd'] = talib.STOCH(df.high, df.low, df.close, fastk_period=fastk_period, slowk_period=slowk_period, slowk_matype=0, slowd_period=slowd_period, slowd_matype=0)
+        
+        return df
+    
+    def wma(self, df, period):
+        
+        df['wma'] = talib.WMA(df.close, timeperiod=period)
+        
+        return df
+    
+    def average_bar(self, df, period):
         
         df['bar_size'] = df['close'] - df['open']
         df['rolling_average_bar_size'] = df['bar_size'].rolling(period).mean()
@@ -426,42 +450,30 @@ class Kraken():
 
         return multi_reg
     
-    def research_pattern(self, df_ema, df_ssl):
+    def research_pattern_ssl(self, df_ema, df_ssl, quantiles):
         
-        uptrend_date_ssl, uptrend_mom_ssl, uptrend_mom_acc_ssl, downtrend_date_ssl, downtrend_mom_ssl, downtrend_mom_acc_ssl, m_mid_ssl = self.trend_analysis(df_ssl)
-        
-        uptrend_date_ema, uptrend_mom_ema, uptrend_mom_acc_ema, downtrend_date_ema, downtrend_mom_ema, downtrend_mom_acc_ema, m_mid_ema = self.trend_analysis(df_ema)
-        
+        bull, bear = self.tr_zones(df_ssl, quantiles)
+        bull_zone = (df_ssl.close[-1] < bull)
+        bear_zone = (df_ssl.close[-1] > bear)
+      
         ######################################################################################
         
         ssl_trail_bull = ((df_ssl.green[-2] > df_ssl.red[-2]) and (df_ssl.green[-3] < df_ssl.red[-3]) and (df_ssl.green[-4] < df_ssl.red[-4]) and (df_ssl.green[-5] < df_ssl.red[-5]) and (df_ssl.green[-6] < df_ssl.red[-6]) and (df_ssl.green[-7] < df_ssl.red[-7]))
         
         ssl_trail_bear = ((df_ssl.green[-2] < df_ssl.red[-2]) and (df_ssl.green[-3] > df_ssl.red[-3]) and (df_ssl.green[-4] > df_ssl.red[-4]) and (df_ssl.green[-5] > df_ssl.red[-5]) and (df_ssl.green[-6] > df_ssl.red[-6]) and (df_ssl.green[-7] > df_ssl.red[-7]))
         
-        ######################################################################################
-        
-        ema_to_close_bull = (df_ema['ema_to_close'][-1]>0)
-        ema_to_close_bear = (df_ema['ema_to_close'][-1]<0)
-
-        if datetime.datetime.strptime(uptrend_date_ssl, '%Y-%m-%d %H:%M:%S')>datetime.datetime.strptime(downtrend_date_ssl, '%Y-%m-%d %H:%M:%S'):
-            last_date = uptrend_date_ssl
-            print ('hourly uptrend pivot', last_date, 'Mom:', uptrend_mom_ssl, 'Acc:', uptrend_mom_acc_ssl)
-            
-        else:
-            last_date = downtrend_date_ssl
-            print ('hourly downtrend pivot', last_date, 'Mom:', downtrend_mom_ssl, 'Acc:', downtrend_mom_acc_ssl)
 
         ######################################################################################
         
-        if ssl_trail_bull:
+        if ssl_trail_bull and bull_zone:
             
             print ('we are in bullish pattern...its a buy')
             print ('-------------------------------------------------')
             print ('price: {}'.format(df_ema.loc[df_ema.index[-1],'close']))
             print ('-------------------------------------------------')
-            print (self.fund,'euros to buy')
+            print (self.buying_power,'euros to buy')
             
-            if self.fund > self.minimum_fund:
+            if self.buying_power > self.minimum_fund:
     
                 response = k.query_private('AddOrder',
                                                 {'pair': self.tickers[self.pair],
@@ -469,11 +481,10 @@ class Kraken():
                                                  'ordertype': 'market',
                                                  'volume': self.fund})
         
-            
             else:
                 print ('not enough fund to buy')
                 
-        elif ssl_trail_bear:
+        elif ssl_trail_bear and bear_zone:
             
             print ('we are in bearish pattern...its a sell')
             print ('-------------------------------------------------')
@@ -481,15 +492,15 @@ class Kraken():
             print ('-------------------------------------------------')
             
             try:
-                print (float(self.balance[self.tickers[self.pair]]),self.tickers[self.pair],'to sell')
+                print (self.crypto_value,self.tickers[self.pair],'to sell')
 
-                if float(self.balance[self.tickers[self.pair]]) * df_ema.close[-1] > self.minimum_fund:
+                if self.crypto_value * df_ema.close[-1] > self.minimum_fund:
 
                     response = k.query_private('AddOrder',
                                                     {'pair': self.tickers[self.pair],
                                                      'type': 'sell',
                                                      'ordertype': 'market',
-                                                     'volume': float(self.balance[self.tickers[self.pair]])})
+                                                     'volume': self.crypto_value})
 
                 
                 else:
