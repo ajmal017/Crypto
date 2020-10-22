@@ -1,4 +1,3 @@
-import krakenex
 import datetime as datetime
 import decimal
 import time
@@ -10,6 +9,7 @@ from findiff import FinDiff
 import talib
 from sklearn.linear_model import LinearRegression
 from itertools import compress
+import krakenex
 
 from .trendline import TrendLine
 
@@ -30,7 +30,7 @@ class Kraken():
         #self.trades = self.k.query_private('TradesHistory')
         self.assets = list(self.balance.keys())
         self.tickers = {'BTC/EUR':'XXBT','ETH/EUR':'XETH','DASH/EUR':'XDASH',
-                        'XRP/EUR':'XXRP','DOT/EUR':'XDOT'}
+                        'XRP/EUR':'XXRP','DOT/EUR':'DOT'}
         self.percent_alloc = percent_alloc
         self.fund = float(self.balance['ZEUR'])
         self.buying_power = self.fund * self.percent_alloc
@@ -472,14 +472,14 @@ class Kraken():
             print ('price: {}'.format(df_ema.loc[df_ema.index[-1],'close']))
             print ('-------------------------------------------------')
             print (self.buying_power,'euros to buy')
-            
+            volume = self.buying_power/df_ema.loc[df_ema.index[-1],'close']
             if self.buying_power > self.minimum_fund:
     
                 response = self.k.query_private('AddOrder',
                                                 {'pair': self.pair,
                                                  'type': 'buy',
                                                  'ordertype': 'market',
-                                                 'volume': self.fund})
+                                                 'volume': volume})
         
             else:
                 print ('not enough fund to buy')
@@ -502,7 +502,7 @@ class Kraken():
                                                      'ordertype': 'market',
                                                      'volume': self.crypto_value})
 
-                
+                    print (response)
                 else:
                     
                     print ('not enough fund to sell')
