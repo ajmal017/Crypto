@@ -15,9 +15,9 @@ from .trendline import TrendLine
 warnings.filterwarnings("ignore")
 
 
-class Kraken():
+class KrakenCron():
     
-    def __init__(self, pair, api_key_file, minimum_fund, percent_alloc, sleepage):
+    def __init__(self, pair, api_key_file, minimum_fund, percent_alloc):
         
         self.pair = pair
         self.api_key_file = api_key_file
@@ -29,9 +29,8 @@ class Kraken():
         #self.trades = self.k.query_private('TradesHistory')
         self.assets = list(self.balance.keys())
         self.tickers = {'BTC/EUR':'XXBT','ETH/EUR':'XETH','DASH/EUR':'XDASH',
-                        'XRP/EUR':'XXRP','DOT/EUR':'DOT','BAT/EUR':'BAT','ADA/EUR':'ADA'}
+                        'XRP/EUR':'XXRP','DOT/EUR':'DOT','BAT/EUR':'BAT'}
         self.percent_alloc = percent_alloc
-        self.sleepage = sleepage
         self.fund = float(self.balance['ZEUR'])
         self.buying_power = self.fund * self.percent_alloc
         try:
@@ -157,32 +156,25 @@ class Kraken():
     def live_pattern(self, interval_5min, bars_5min, period_ema_5min, 
                            interval_hourly, bars_hourly, period_ssl,quantiles):
         
-        while True:
+        print ('------------------------------------------------------------------------')
+
+        df_5min = self.ohlcv(interval_5min, bars_5min)
+        df_hourly = self.ohlcv(interval_hourly, bars_hourly)
+
+        df_ema = self.ema(df_5min, period_ema_5min)
+        df_ssl = self.ssl(df_hourly, period_ssl)
+
+        #df_ema = self.average_bar(30, df_ema)
+
+        print (df_ssl.index[-1],'hourly candle in progress')
+        print ('starting',df_ema.index[-1],'5min candle')
+        print ('5 min opening price',df_ema.close[-1])
+
+        #################################################################################
+        self.research_pattern_ssl(df_ema, df_ssl,quantiles)
+        #################################################################################
+
             
-            print ('------------------------------------------------------------------------')
-
-            df_5min = self.ohlcv(interval_5min, bars_5min)
-            df_hourly = self.ohlcv(interval_hourly, bars_hourly)
-
-            df_ema = self.ema(df_5min, period_ema_5min)
-            df_ssl = self.ssl(df_hourly, period_ssl)
-
-            #df_ema = self.average_bar(30, df_ema)
-
-            print (df_ssl.index[-1],'hourly candle in progress')
-            print ('starting',df_ema.index[-1],'5min candle')
-            print ('5 min opening price',df_ema.close[-1])
-
-            #################################################################################
-            self.research_pattern_ssl(df_ema, df_ssl)
-            #################################################################################
-
-            last = datetime.datetime.strptime(df_ema.index[-1], '%Y-%m-%d %H:%M:%S').timestamp()
-            next_time = last + (interval_5min*60)
-            sleep = float(next_time) - time.time() + self.sleepage
-
-            time.sleep(sleep)
-                
     def daily_analysis(self, interval_daily, bars_daily, period_ema_daily, period_ssl_daily,
                              rolling_reg_period, zone_quantile):
         
@@ -253,7 +245,7 @@ class Kraken():
 
         ret = self.k.query_public(method='OHLC', data = {'pair': self.pair, 'since': since, 'interval': interval})
 
-        array = ret['result'][self.pair]
+        array = ret['result'][list(ret['result'].keys())[0]]
 
         df = pd.DataFrame(data = array, columns = ['time','open','high','low','close','vwap','volume','count'])
         df = df.astype('float')
@@ -337,19 +329,6 @@ class Kraken():
         bull = ((max(df.close) - min(df.close))/quantiles + min(df.close)) 
         
         return bull, bear
-    
-    def fibonacci_retracement(self, df):
-        
-        
-        diff = max(df.high) - min(df.low)
-        level0 = max(df.high) - 0.263 * diff
-        level1 = max(df.high) - 0.382 * diff
-        level2 = max(df.high) - 0.500 * diff
-        level3 = max(df.high) - 0.618 * diff
-        level4 = max(df.high) - 0.786 * diff
-        
-        
-        return max(df.high), level0, level1, level2, level3, level4, min(df.low)
         
     def ssl(self, df_ssl, period_ssl):
 
@@ -365,19 +344,19 @@ class Kraken():
 
         for t in df_ssl.index:
 
-            close = df_ssl.close.loc[t]
-            sma_high = df_ssl.sma_high.loc[t]
-            sma_low = df_ssl.sma_low.loc[t]
-            try:
-                if (close < sma_low):
-                    df_ssl.loc[slice(t,df_ssl.index[-1]),:]['red'] = df_ssl.loc[slice(t,df_ssl.index[-1]),:]['sma_high']
-                    df_ssl.loc[slice(t,df_ssl.index[-1]),:]['green'] = df_ssl.loc[slice(t,df_ssl.index[-1]),:]['sma_low']
+            close = df_ssl.loc[t]['close']
+            sma_high = df_ssl.loc[t]['sma_high']
+            sma_low = df_ssl.loc[t]['sma_low']
 
-                elif (close > sma_high):
-                    df_ssl.loc[slice(t,df_ssl.index[-1]),:]['red'] = df_ssl.loc[slice(t,df_ssl.index[-1]),:]['sma_low']
-                    df_ssl.loc[slice(t,df_ssl.index[-1]),:]['green'] = df_ssl.loc[slice(t,df_ssl.index[-1]),:]['sma_high']
-            except:
-                pass
+            if close < sma_low:
+                df_ssl.loc[slice(t,df_ssl.index[-1]),:]['red'] = df_ssl.loc[slice(t,df_ssl.index[-1]),:]['sma_high']
+                df_ssl.loc[slice(t,df_ssl.index[-1]),:]['green'] = df_ssl.loc[slice(t,df_ssl.index[-1]),:]['sma_low']
+
+            elif close > sma_high:
+                df_ssl.loc[slice(t,df_ssl.index[-1]),:]['red'] = df_ssl.loc[slice(t,df_ssl.index[-1]),:]['sma_low']
+                df_ssl.loc[slice(t,df_ssl.index[-1]),:]['green'] = df_ssl.loc[slice(t,df_ssl.index[-1]),:]['sma_high']
+
+
         return df_ssl
     
     def ema(self, df, period):
@@ -462,11 +441,11 @@ class Kraken():
 
         return multi_reg
     
-    def research_pattern_ssl(self, df_ema, df_ssl):
+    def research_pattern_ssl(self, df_ema, df_ssl, quantiles):
         
-        maxx, level0, level1, level2, level3, level4, minn = self.fibonacci_retracement(df_ssl)
-        bull_zone = (df_ssl.close[-1] < level4)
-        bear_zone = (df_ssl.close[-1] > level0)
+        bull, bear = self.tr_zones(df_ssl, quantiles)
+        bull_zone = (df_ssl.close[-1] < bull)
+        bear_zone = (df_ssl.close[-1] > bear)
       
         ######################################################################################
         
@@ -485,17 +464,13 @@ class Kraken():
             print ('-------------------------------------------------')
             print (self.buying_power,'euros to buy')
             volume = self.buying_power/df_ema.loc[df_ema.index[-1],'close']
-            
             if self.buying_power > self.minimum_fund:
     
                 response = self.k.query_private('AddOrder',
                                                 {'pair': self.pair,
                                                  'type': 'buy',
                                                  'ordertype': 'market',
-                                                 'volume': volume,
-                                                 'close[ordertype]': 'stop-loss',
-                                                 'close[price]': 0.98 * df_ema.loc[df_ema.index[-1],'close']
-                                                })
+                                                 'volume': volume})
                 print (response)
             else:
                 print ('insufficient funds to buy')
@@ -516,19 +491,15 @@ class Kraken():
                                                     {'pair': self.pair,
                                                      'type': 'sell',
                                                      'ordertype': 'market',
-                                                     'volume': self.crypto_value
-                                                    })
+                                                     'volume': self.crypto_value})
+
                     print (response)
                 else:
+                    
                     print ('insufficient funds to sell')
             except:
                 print ('the asset is not in the balance')
         else:
             print ('pattern not met')    
-
-        
-        
-        
-        
-        
+                
         

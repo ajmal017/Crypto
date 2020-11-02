@@ -5,7 +5,7 @@ sys.path.append('')
 
 from modules import KrakenLight
 
-constructor = KrakenLight(pair = 'ETH/EUR', api_key_file = 'kraken.key', minimum_fund=1000, percent_alloc=1, sleepage =30)
+constructor = KrakenLight(pair = 'DASH/EUR', api_key_file = 'kraken.key', minimum_fund=1000, percent_alloc=1, sleepage =150)
 
 constructor.live_pattern(interval_5min = 5, bars_5min = 1000, period_ema_5min = 50, 
                          interval_hourly = 60 , bars_hourly = 1000, period_ssl = 10,quantiles =3)
